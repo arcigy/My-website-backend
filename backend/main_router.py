@@ -1,12 +1,14 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import os
 import uvicorn
+import sys
+import urllib.parse
 
 # --- IMPORT FIX FOR CLOUD ---
-import sys
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
@@ -17,24 +19,20 @@ try:
     from calendar_engine import get_calendar_availability, confirm_booking, cancel_booking
     from utils.email_engine import send_confirmation_email
 except ImportError:
-    # Fallback for different execution contexts
     try:
         from .tony_backend import get_tony_response, persist_conversation
         from .calendar_engine import get_calendar_availability, confirm_booking, cancel_booking
         from .utils.email_engine import send_confirmation_email
-    except (ImportError, ValueError):
-        print("CRITICAL: Could not import backend modules!")
-from fastapi import BackgroundTasks, Query
-from fastapi.responses import RedirectResponse
-import urllib.parse
+    except:
+        print("CRITICAL: Module imports failed!")
 
 app = FastAPI(title="Tony AI Cloud Backend")
 
-# Enable CORS
+# Enable CORS - Robust settings for Cloud
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False, # Changed to False to prevent 502 conflict with allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
