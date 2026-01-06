@@ -5,12 +5,20 @@ from openai import OpenAI
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
-# Load environment variables from root .env
+# Load environment variables from various possible locations
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Up 3 levels: backend -> Arcigy_website -> cloud_automations -> Agentic Workflows
-root_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), ".env")
-if os.path.exists(root_env):
-    load_dotenv(root_env, override=True)
+# Check local, parent, and grandparent for .env
+env_paths = [
+    os.path.join(BASE_DIR, ".env"),
+    os.path.join(os.path.dirname(BASE_DIR), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), ".env")
+]
+
+for p in env_paths:
+    if os.path.exists(p):
+        load_dotenv(p, override=True)
+        break
 else:
     load_dotenv(override=True)
 
@@ -23,9 +31,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
-# Load System Prompt from external file
-# Up 3 levels to reach directives
-PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "directives", "tony_prompt.md")
+# Load System Prompt
+# Try local first (we copied it there for cloud), then fallback to relative dev path
+LOGICAL_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "tony_prompt.md")
+DEV_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "directives", "tony_prompt.md")
+PROMPT_PATH = LOGICAL_PROMPT_PATH if os.path.exists(LOGICAL_PROMPT_PATH) else DEV_PROMPT_PATH
 
 def load_system_prompt():
     try:

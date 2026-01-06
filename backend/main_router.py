@@ -5,15 +5,21 @@ from typing import List, Optional
 import os
 import uvicorn
 
-# Import our custom engines
-from tony_backend import get_tony_response, persist_conversation
-from calendar_engine import get_calendar_availability, confirm_booking, cancel_booking
+# Import our custom engines using relative imports or sys.path adjustment
 try:
-    from utils.email_engine import send_confirmation_email
-except ImportError:
+    from .tony_backend import get_tony_response, persist_conversation
+    from .calendar_engine import get_calendar_availability, confirm_booking, cancel_booking
+    from .utils.email_engine import send_confirmation_email
+except (ImportError, ValueError):
     import sys
-    sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-    from utils.email_engine import send_confirmation_email
+    sys.path.append(os.path.dirname(__file__))
+    from tony_backend import get_tony_response, persist_conversation
+    from calendar_engine import get_calendar_availability, confirm_booking, cancel_booking
+    try:
+        from utils.email_engine import send_confirmation_email
+    except ImportError:
+        sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
+        from email_engine import send_confirmation_email
 from fastapi import BackgroundTasks, Query
 from fastapi.responses import RedirectResponse
 import urllib.parse

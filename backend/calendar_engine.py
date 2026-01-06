@@ -4,12 +4,19 @@ import requests
 import datetime
 from dotenv import load_dotenv
 
-# Load environment variables from root .env
+# Load environment variables from various possible locations
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Up 3 levels: backend -> Arcigy_website -> cloud_automations -> Agentic Workflows
-root_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), ".env")
-if os.path.exists(root_env):
-    load_dotenv(root_env, override=True)
+env_paths = [
+    os.path.join(BASE_DIR, ".env"),
+    os.path.join(os.path.dirname(BASE_DIR), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), ".env")
+]
+
+for p in env_paths:
+    if os.path.exists(p):
+        load_dotenv(p, override=True)
+        break
 else:
     load_dotenv(override=True)
 
