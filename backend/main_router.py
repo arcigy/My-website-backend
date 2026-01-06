@@ -5,21 +5,25 @@ from typing import List, Optional
 import os
 import uvicorn
 
-# Import our custom engines using relative imports or sys.path adjustment
+# --- IMPORT FIX FOR CLOUD ---
+import sys
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
+# --- END IMPORT FIX ---
+
 try:
-    from .tony_backend import get_tony_response, persist_conversation
-    from .calendar_engine import get_calendar_availability, confirm_booking, cancel_booking
-    from .utils.email_engine import send_confirmation_email
-except (ImportError, ValueError):
-    import sys
-    sys.path.append(os.path.dirname(__file__))
     from tony_backend import get_tony_response, persist_conversation
     from calendar_engine import get_calendar_availability, confirm_booking, cancel_booking
+    from utils.email_engine import send_confirmation_email
+except ImportError:
+    # Fallback for different execution contexts
     try:
-        from utils.email_engine import send_confirmation_email
-    except ImportError:
-        sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
-        from email_engine import send_confirmation_email
+        from .tony_backend import get_tony_response, persist_conversation
+        from .calendar_engine import get_calendar_availability, confirm_booking, cancel_booking
+        from .utils.email_engine import send_confirmation_email
+    except (ImportError, ValueError):
+        print("CRITICAL: Could not import backend modules!")
 from fastapi import BackgroundTasks, Query
 from fastapi.responses import RedirectResponse
 import urllib.parse
@@ -61,7 +65,6 @@ async def chat_endpoint(data: ChatMessage, background_tasks: BackgroundTasks):
     Main chat endpoint with resilience.
     """
     try:
-        from tony_backend import get_tony_response, persist_conversation
         response_json, formatted_history = get_tony_response(data.message, data.conversationID, data.history, data.lang)
         
         # Background persistence only if supabase is configured
