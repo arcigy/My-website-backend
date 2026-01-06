@@ -166,12 +166,18 @@ def send_confirmation_email(to_email, name, action_type, details, confirm_url, l
         else:
             print("   ❌ Image NOT attached (file missing).")
 
+        # SMTP SEND (Railway compatible: 587 + STARTTLS)
         try:
-            with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
+            # Change to 587 if currently 465 for better cloud compatibility
+            actual_port = 587 if SMTP_PORT == 465 else SMTP_PORT
+            
+            print(f"   Connecting to {SMTP_SERVER}:{actual_port} (STARTTLS)...")
+            with smtplib.SMTP(SMTP_SERVER, actual_port, timeout=10) as server:
+                server.starttls()
                 server.login(SMTP_USER, SMTP_PASS)
                 server.send_message(msg)
             
-            # Save to Sent
+            # Save to Sent (Optional, skipping if network unstable)
             try:
                 imap_host = os.getenv("EMAIL_HOST_IMAP", "imap.hostinger.com")
                 imap_port = int(os.getenv("EMAIL_PORT_IMAP", 993))
@@ -181,10 +187,12 @@ def send_confirmation_email(to_email, name, action_type, details, confirm_url, l
                 mail.logout()
             except: pass
 
-            print("   ✅ Email sent successfully via SMTP.")
+            print("   ✅ Email sent successfully via SMTP (587).")
             return True
         except Exception as e:
             print(f"CRITICAL Email Error: {e}")
+            if "101" in str(e):
+                print("   💡 TIP: Port 465/587 might be blocked by Railway. Consider using Resend API.")
             return False
             
     except Exception as e:
