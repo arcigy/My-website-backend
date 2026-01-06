@@ -22,14 +22,43 @@ for p in env_paths:
 else:
     load_dotenv(override=True)
 
+# Helper to mask secret keys in logs
+def mask_key(k):
+    if not k: return "MISSING"
+    return k[:4] + "..." + k[-4:] if len(k) > 8 else "***"
+
+# Load environment variables
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(override=True)
+
 # Configurations
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+print(f"🤖 Tony Initialization:")
+print(f"   OPENAI_KEY: {mask_key(OPENAI_API_KEY)}")
+print(f"   SUPABASE_URL: {'SET' if SUPABASE_URL else 'MISSING'}")
+print(f"   SUPABASE_KEY: {mask_key(SUPABASE_KEY)}")
+
 # Initialize clients
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
-openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+supabase: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("   ✅ Supabase: Connected")
+    except Exception as e:
+        print(f"   ❌ Supabase Error: {e}")
+
+openai_client: OpenAI = None
+if OPENAI_API_KEY:
+    try:
+        openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        print("   ✅ OpenAI: Connected")
+    except Exception as e:
+        print(f"   ❌ OpenAI Error: {e}")
+else:
+    print("   ❌ OpenAI: NOT CONFIGURED")
 
 # Load System Prompt
 # Try local first (we copied it there for cloud), then fallback to relative dev path
@@ -90,6 +119,9 @@ def get_tony_response(message, conversation_id, history, user_lang=None):
         
         # 2. Get AI Response
         system_prompt = load_system_prompt()
+        if not openai_client:
+            raise Exception("OpenAI client not initialized. Check OPENAI_API_KEY variable.")
+            
         if "{now}" in system_prompt:
             system_prompt = system_prompt.replace("{now}", str(datetime.datetime.now()))
         
