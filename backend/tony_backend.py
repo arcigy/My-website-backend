@@ -49,11 +49,14 @@ def persist_conversation(conversation_id, message, output, formatted_history):
     """
     Handles database updates in the background.
     """
+    if not supabase:
+        print("⚠️ Supabase client not initialized. Skipping persistence.")
+        return
     try:
         # 1. Update Memory
         conv_data = {
             "messageID": conversation_id,
-            "conversation": formatted_history + f"\nUser: {message}\nBot: {output['response']}"
+            "conversation": formatted_history + f"\nUser: {message}\nBot: {output.get('response', '')}"
         }
         try:
             supabase.table("ConversationMemory").upsert(conv_data, on_conflict="messageID").execute()
@@ -61,7 +64,7 @@ def persist_conversation(conversation_id, message, output, formatted_history):
             print(f"Database Warning (Memory): {db_err}")
 
         # 2. Update Leads (Patients)
-        if all(output.get(key) != "null" for key in ["forname", "surname", "email", "phone"]):
+        if all(output.get(key) != "null" and output.get(key) is not None for key in ["forname", "surname", "email", "phone"]):
             patient_data = {
                 "forename": output["forname"],
                 "surname": output["surname"],

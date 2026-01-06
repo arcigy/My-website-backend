@@ -58,18 +58,28 @@ def read_root():
 @app.post("/webhook/chat")
 async def chat_endpoint(data: ChatMessage, background_tasks: BackgroundTasks):
     """
-    Main chat endpoint with V2 logic.
+    Main chat endpoint with resilience.
     """
-    response_json, formatted_history = get_tony_response(data.message, data.conversationID, data.history, data.lang)
-    
-    # Background persistence
-    background_tasks.add_task(persist_conversation, data.conversationID, data.message, response_json, formatted_history)
-    
-    return response_json
+    try:
+        from tony_backend import get_tony_response, persist_conversation
+        response_json, formatted_history = get_tony_response(data.message, data.conversationID, data.history, data.lang)
+        
+        # Background persistence only if supabase is configured
+        if persist_conversation:
+             background_tasks.add_task(persist_conversation, data.conversationID, data.message, response_json, formatted_history)
+        
+        return response_json
+    except Exception as e:
+        print(f"❌ Chat Error: {str(e)}")
+        return {"response": "Prepáčte, momentálne mám technické ťažkosti. Skúste to prosím neskôr.", "intention": "error"}
 
 @app.post("/webhook/calendar-availability-check")
 async def availability_endpoint():
-    return get_calendar_availability()
+    try:
+        return get_calendar_availability()
+    except Exception as e:
+        print(f"❌ Availability Error: {str(e)}")
+        return []
 
 @app.post("/webhook/calendar-initiate-book")
 async def initiate_booking(data: BookingConfirm, background_tasks: BackgroundTasks):
