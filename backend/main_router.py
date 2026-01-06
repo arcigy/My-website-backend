@@ -5,38 +5,22 @@ from pydantic import BaseModel
 from typing import List, Optional, Any
 import os
 import uvicorn
-import sys
 import urllib.parse
-import datetime
 
-# --- IMPORT FIX FOR CLOUD ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-if BASE_DIR not in sys.path:
-    sys.path.append(BASE_DIR)
-
-# Global imports with safety
+# Standard Imports from the backend package
 try:
+    from backend import tony_backend
+    from backend import calendar_engine
+    from backend.utils import email_engine
+except ImportError:
+    # Local dev fallback
     import tony_backend
     import calendar_engine
     import utils.email_engine as email_engine
-except Exception as e:
-    print(f"⚠️ Initial Import Warning: {e}")
 
-app = FastAPI(title="Tony AI Cloud Backend")
+app = FastAPI(title="Tony AI - ArciGy Cloud")
 
-# 1. Manual OPTIONS handler (Fixes 502 on Preflight)
-@app.options("/{rest_of_path:path}")
-async def preflight_handler(request: Request, rest_of_path: str):
-    return JSONResponse(
-        content="OK",
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, GET, OPTIONS, DELETE, PUT",
-            "Access-Control-Allow-Headers": "*",
-        }
-    )
-
-# 2. Robust CORS Middleware
+# Robust CORS Configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -45,7 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Models
+# Data Models
 class ChatMessage(BaseModel):
     message: str
     conversationID: str
@@ -60,10 +44,9 @@ class BookingConfirm(BaseModel):
     lang: Any = "sk"
     conversationID: Any = None
 
-# Routes
 @app.get("/")
-def read_root():
-    return {"status": "online", "agent": "Tony", "version": "3.0.1"}
+def health_check():
+    return {"status": "active", "bridge": "online"}
 
 @app.post("/webhook/chat")
 async def chat_endpoint(data: ChatMessage, background_tasks: BackgroundTasks):
@@ -76,7 +59,7 @@ async def chat_endpoint(data: ChatMessage, background_tasks: BackgroundTasks):
         return response_json
     except Exception as e:
         print(f"❌ Chat Error: {e}")
-        return {"response": "Prepáčte, mám technické ťažkosti.", "intention": "error"}
+        return {"response": "Prepáčte, mám technické ťažkosti. Skúste to prosím neskôr.", "intention": "error"}
 
 @app.post("/webhook/calendar-availability-check")
 async def availability_endpoint():
@@ -89,9 +72,9 @@ async def availability_endpoint():
 @app.post("/webhook/calendar-initiate-book")
 async def initiate_booking(data: BookingConfirm, background_tasks: BackgroundTasks):
     try:
-        print(f"📧 BOOKING REQUEST: {data.email} | {data.name}")
         base_url = os.getenv("WEB_BASE_URL", "https://my-website-backend-production-4247.up.railway.app")
         
+        # Build the confirmation URL
         params = {
             "action": "book",
             "time": data.bookingTime,
@@ -103,11 +86,13 @@ async def initiate_booking(data: BookingConfirm, background_tasks: BackgroundTas
         }
         confirm_url = f"{base_url}/webhook/confirm?{urllib.parse.urlencode(params)}"
         
+        # Send Email via Background Task
         background_tasks.add_task(
             email_engine.send_confirmation_email,
             data.email, data.name, "book", data.bookingTime, confirm_url, data.lang
         )
-        return {"status": "verification_sent", "message": "Check email."}
+        
+        return {"status": "verification_sent", "message": "Email queued."}
     except Exception as e:
         print(f"❌ Booking Start Error: {e}")
         return {"status": "error", "message": str(e)}
@@ -119,13 +104,18 @@ async def confirm_action_webhook(action: str, time: str, email: str, name: str, 
         if action == "book":
             res = calendar_engine.confirm_booking(time, email, name, phone, cid)
             if res["status"] == "success":
+                # Success redirect to confirmation page
                 target = f"{frontend_url}/.tmp/public_html/confirmation.html?lang={lang}&name={urllib.parse.quote(name)}"
                 return RedirectResponse(url=target)
             return {"status": "error", "message": res.get("message")}
-        return {"status": "error", "message": "Invalid action"}
+        return {"status": "error", "message": "Invalid link"}
     except Exception as e:
         print(f"❌ Confirm Error: {e}")
         return {"status": "error", "message": str(e)}
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8001))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8001))
