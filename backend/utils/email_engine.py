@@ -166,9 +166,8 @@ def send_confirmation_email(to_email, name, action_type, details, confirm_url, l
         else:
             print("   ❌ Image NOT attached (file missing).")
 
-        # SMTP SEND
         try:
-            with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+            with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
                 server.login(SMTP_USER, SMTP_PASS)
                 server.send_message(msg)
             

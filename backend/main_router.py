@@ -111,9 +111,11 @@ async def initiate_booking(data: BookingConfirm, background_tasks: BackgroundTas
     }
     confirm_url = f"{base_url}/webhook/confirm?{urllib.parse.urlencode(confirm_params)}"
     
-    print(f"📨 Sending email to {data.email}...")
-    # We send it directly here to catch errors and notify the frontend if email fails
-    success = send_confirmation_email(
+    print(f"📨 Queueing confirmation email to {data.email}...")
+    
+    # Send email in the background to prevent UI hang
+    background_tasks.add_task(
+        send_confirmation_email,
         data.email, 
         data.name, 
         "book", 
@@ -122,11 +124,7 @@ async def initiate_booking(data: BookingConfirm, background_tasks: BackgroundTas
         data.lang
     )
     
-    if not success:
-        print(f"❌ Email FAILED to send!")
-        return {"status": "error", "message": "Failed to send confirmation email. Please check server logs."}
-
-    print(f"✅ Email sent successfully!")
+    print(f"✅ Email queued successfully!")
     return {"status": "verification_sent", "message": "Check your email to confirm."}
 
 @app.get("/webhook/confirm")
