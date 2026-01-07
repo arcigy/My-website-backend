@@ -1,0 +1,175 @@
+import os
+import json
+import datetime
+from openai import OpenAI
+from supabase import create_client, Client
+from dotenv import load_dotenv
+
+# Load environment variables from various possible locations
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Check local, parent, and grandparent for .env
+env_paths = [
+    os.path.join(BASE_DIR, ".env"),
+    os.path.join(os.path.dirname(BASE_DIR), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(BASE_DIR)), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), ".env")
+]
+
+for p in env_paths:
+    if os.path.exists(p):
+        load_dotenv(p, override=True)
+        break
+else:
+    load_dotenv(override=True)
+
+# Helper to mask secret keys in logs
+def mask_key(k):
+    if not k: return "MISSING"
+    return k[:4] + "..." + k[-4:] if len(k) > 8 else "***"
+
+# Load environment variables
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(override=True)
+
+# Configurations
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+print(f"🤖 Tony Initialization:")
+print(f"   OPENAI_KEY: {mask_key(OPENAI_API_KEY)}")
+print(f"   SUPABASE_URL: {'SET' if SUPABASE_URL else 'MISSING'}")
+print(f"   SUPABASE_KEY: {mask_key(SUPABASE_KEY)}")
+
+# Initialize clients
+supabase: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("   ✅ Supabase: Connected")
+    except Exception as e:
+        print(f"   ❌ Supabase Error: {e}")
+
+openai_client: OpenAI = None
+if OPENAI_API_KEY:
+    try:
+        openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        print("   ✅ OpenAI: Connected")
+    except Exception as e:
+        print(f"   ❌ OpenAI Error: {e}")
+else:
+    print("   ❌ OpenAI: NOT CONFIGURED")
+
+# Load System Prompt
+# Try local first (we copied it there for cloud), then fallback to relative dev path
+LOGICAL_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "tony_prompt.md")
+DEV_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "directives", "tony_prompt.md")
+PROMPT_PATH = LOGICAL_PROMPT_PATH if os.path.exists(LOGICAL_PROMPT_PATH) else DEV_PROMPT_PATH
+
+def load_system_prompt():
+    try:
+        with open(PROMPT_PATH, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        print(f"Error loading prompt: {e}")
+        return "You are Tony, a helpful AI assistant."
+
+def persist_conversation(conversation_id, message, output, formatted_history):
+    """
+    Handles database updates in the background.
+    """
+    if not supabase:
+        print("⚠️ Supabase client not initialized. Skipping persistence.")
+        return
+    try:
+        # 1. Update Memory
+        conv_data = {
+            "messageID": conversation_id,
+            "conversation": formatted_history + f"\nUser: {message}\nBot: {output.get('response', '')}"
+        }
+        try:
+            supabase.table("ConversationMemory").upsert(conv_data, on_conflict="messageID").execute()
+        except Exception as db_err:
+            print(f"Database Warning (Memory): {db_err}")
+
+        # 2. Update Leads (Patients)
+        if all(output.get(key) != "null" and output.get(key) is not None for key in ["forname", "surname", "email", "phone"]):
+            patient_data = {
+                "forename": output["forname"],
+                "surname": output["surname"],
+                "email": output["email"],
+                "phone": output["phone"]
+            }
+            try:
+                supabase.table("Patients").upsert(patient_data, on_conflict="phone").execute()
+            except Exception as db_err:
+                print(f"Database Warning (Patients): {db_err}")
+    except Exception as e:
+        print(f"Background Persistence Error: {e}")
+
+def get_tony_response(message, conversation_id, history, user_lang=None):
+    """
+    Handles the AI reasoning using the external prompt.
+    """
+    try:
+        # 1. Format history
+        formatted_history = ""
+        if isinstance(history, list):
+            formatted_history = "\n".join([f"{m.get('type', 'unknown').capitalize()}: {m.get('text', '')}" for m in history])
+        
+        # 2. Get AI Response
+        system_prompt = load_system_prompt()
+        if not openai_client:
+            raise Exception("OpenAI client not initialized. Check OPENAI_API_KEY variable.")
+            
+        if "{now}" in system_prompt:
+            system_prompt = system_prompt.replace("{now}", str(datetime.datetime.now()))
+        
+        # Guide the AI on the required language
+        detected_lang = user_lang if user_lang else ('sk' if any(word in message.lower() for word in ['ahoj', 'chcem', 'termin', 'ano', 'dobry']) else 'en')
+        lang_instruction = f"IMPORTANT: Respond in {detected_lang.upper()} language." if detected_lang else ""
+
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt + f"\n\n{lang_instruction}\nIMPORTANT: Respond ONLY with a raw JSON object. No markdown blocks."},
+                {"role": "user", "content": f"HISTÓRIA KONVERZÁCIE:\n{formatted_history}\n\nAKTUÁLNA SPRÁVA OD POUŽÍVATEĽA: {message}"}
+            ],
+            response_format={"type": "json_object"}
+        )
+        
+        raw_text = response.choices[0].message.content.strip()
+        
+        # Aggressive cleaning for JSON
+        try:
+            output = json.loads(raw_text)
+        except json.JSONDecodeError:
+            # Fallback: Find the first '{' and last '}'
+            start = raw_text.find('{')
+            end = raw_text.rfind('}')
+            if start != -1 and end != -1:
+                output = json.loads(raw_text[start:end+1])
+            else:
+                raise
+        
+        # Determine language (simple heuristic)
+        lang = user_lang if user_lang else ('sk' if any(word in message.lower() for word in ['ahoj', 'chcem', 'termin', 'ano', 'dobry']) else 'en')
+        output['lang'] = lang
+        
+        return output, formatted_history
+
+    except Exception as e:
+        import traceback
+        print(f"Error in Tony AI: {e}")
+        traceback.print_exc()
+        return {
+            "intention": "question",
+            "response": "Prepáč, niečo sa pokazilo. Skús prosím znova.",
+            "error": str(e)
+        }, ""
+
+if __name__ == "__main__":
+    # Local Test
+    test_msg = "Ahoj, ja som Branislav Laubert, moj email je branislav@arcigy.com a tel cislo +421912345678. Chcem demo."
+    result = get_tony_response(test_msg, "test_conv_123", [])
+    print(json.dumps(result, indent=2))
