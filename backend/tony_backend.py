@@ -27,10 +27,6 @@ def mask_key(k):
     if not k: return "MISSING"
     return k[:4] + "..." + k[-4:] if len(k) > 8 else "***"
 
-# Load environment variables
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(override=True)
-
 # Configurations
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
@@ -61,7 +57,6 @@ else:
     print("   ❌ OpenAI: NOT CONFIGURED")
 
 # Load System Prompt
-# Try local first (we copied it there for cloud), then fallback to relative dev path
 LOGICAL_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "tony_prompt.md")
 DEV_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "directives", "tony_prompt.md")
 PROMPT_PATH = LOGICAL_PROMPT_PATH if os.path.exists(LOGICAL_PROMPT_PATH) else DEV_PROMPT_PATH
@@ -93,13 +88,29 @@ def persist_conversation(conversation_id, message, output, formatted_history):
             print(f"Database Warning (Memory): {db_err}")
 
         # 2. Update Leads (Patients)
-        if all(output.get(key) != "null" and output.get(key) is not None for key in ["forname", "surname", "email", "phone"]):
+        ext = output.get("extractedData", {})
+        
+        # Primary fields from legacy keys or extractedData
+        p_forname = output.get("forname")
+        p_surname = output.get("surname")
+        p_email = output.get("email")
+        p_phone = output.get("phone")
+
+        # If any is "null", try to fill from extractedData (especially company/turnover)
+        is_valid = all(x and x != "null" for x in [p_forname, p_surname, p_email, p_phone])
+        
+        if is_valid:
             patient_data = {
-                "forename": output["forname"],
-                "surname": output["surname"],
-                "email": output["email"],
-                "phone": output["phone"]
+                "forename": p_forname,
+                "surname": p_surname,
+                "email": p_email,
+                "phone": p_phone,
+                "company": ext.get("company") if ext.get("company") != "null" else None,
+                "turnover": ext.get("turnover") if ext.get("turnover") != "null" else None
             }
+            # Clean up Nones
+            patient_data = {k: v for k, v in patient_data.items() if v is not None}
+            
             try:
                 supabase.table("Patients").upsert(patient_data, on_conflict="phone").execute()
             except Exception as db_err:
@@ -107,7 +118,7 @@ def persist_conversation(conversation_id, message, output, formatted_history):
     except Exception as e:
         print(f"Background Persistence Error: {e}")
 
-def get_tony_response(message, conversation_id, history, user_lang=None):
+def get_tony_response(message, conversation_id, history, user_lang=None, user_data=None):
     """
     Handles the AI reasoning using the external prompt.
     """
@@ -129,22 +140,28 @@ def get_tony_response(message, conversation_id, history, user_lang=None):
         detected_lang = user_lang if user_lang else ('sk' if any(word in message.lower() for word in ['ahoj', 'chcem', 'termin', 'ano', 'dobry']) else 'en')
         lang_instruction = f"IMPORTANT: Respond in {detected_lang.upper()} language." if detected_lang else ""
 
+        # Format User Data for Context
+        user_ctx_str = ""
+        if user_data:
+            try:
+                user_ctx_str = f"USER DATA (Known info): {json.dumps(user_data, ensure_ascii=False)}\n\n"
+            except:
+                pass
+
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt + f"\n\n{lang_instruction}\nIMPORTANT: Respond ONLY with a raw JSON object. No markdown blocks."},
-                {"role": "user", "content": f"HISTÓRIA KONVERZÁCIE:\n{formatted_history}\n\nAKTUÁLNA SPRÁVA OD POUŽÍVATEĽA: {message}"}
+                {"role": "user", "content": f"{user_ctx_str}HISTÓRIA KONVERZÁCIE:\n{formatted_history}\n\nAKTUÁLNA SPRÁVA OD POUŽÍVATEĽA: {message}"}
             ],
             response_format={"type": "json_object"}
         )
         
         raw_text = response.choices[0].message.content.strip()
         
-        # Aggressive cleaning for JSON
         try:
             output = json.loads(raw_text)
         except json.JSONDecodeError:
-            # Fallback: Find the first '{' and last '}'
             start = raw_text.find('{')
             end = raw_text.rfind('}')
             if start != -1 and end != -1:
@@ -152,7 +169,6 @@ def get_tony_response(message, conversation_id, history, user_lang=None):
             else:
                 raise
         
-        # Determine language (simple heuristic)
         lang = user_lang if user_lang else ('sk' if any(word in message.lower() for word in ['ahoj', 'chcem', 'termin', 'ano', 'dobry']) else 'en')
         output['lang'] = lang
         

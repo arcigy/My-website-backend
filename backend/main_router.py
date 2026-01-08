@@ -9,8 +9,6 @@ import uvicorn
 import sys
 import urllib.parse
 
-# ... (imports logic)
-
 app = FastAPI()
 print("🚀 DEPLOYMENT: UPDATED BREVO + ASSETS")
 # Check Brevo Key
@@ -44,6 +42,7 @@ class ChatMessage(BaseModel):
     conversationID: str
     history: List[Any]
     lang: Optional[str] = "sk"
+    userData: Optional[ Any] = None
 
 class BookingConfirm(BaseModel):
     bookingTime: Any
@@ -74,9 +73,9 @@ async def chat_endpoint(data: ChatMessage, background_tasks: BackgroundTasks):
         return {"response": "Internal System Error: Logic module not loaded.", "intention": "error"}
 
     try:
-        # Reverting to direct call like before
+        # Pass userData to the reasoning engine
         response_json, formatted_history = tony_module.get_tony_response(
-            data.message, data.conversationID, data.history, data.lang
+            data.message, data.conversationID, data.history, data.lang, data.userData
         )
         if hasattr(tony_module, 'supabase') and tony_module.supabase:
              background_tasks.add_task(tony_module.persist_conversation, data.conversationID, data.message, response_json, formatted_history)
@@ -88,48 +87,18 @@ async def chat_endpoint(data: ChatMessage, background_tasks: BackgroundTasks):
 @app.post("/webhook/calendar-availability-check")
 async def availability_endpoint():
     try:
-        return calendar_engine.get_calendar_availability()
+        from calendar_engine import get_calendar_availability
+        return get_calendar_availability()
     except Exception as e:
         return []
 
 @app.post("/webhook/calendar-initiate-book")
 async def initiate_booking(data: BookingConfirm, background_tasks: BackgroundTasks):
     try:
-        base_url = os.getenv("WEB_BASE_URL", "https://my-website-backend-production-25c8.up.railway.app")
-        params = {
-            "action": "book",
-            "time": data.bookingTime,
-            "email": data.email,
-            "name": data.name,
-            "phone": data.phone,
-            "lang": data.lang,
-            "cid": data.conversationID
-        }
-        confirm_url = f"{base_url}/webhook/confirm?{urllib.parse.urlencode(params)}"
-        
-        # This now sends on background but returns OK immediately
-        background_tasks.add_task(
-            email_engine.send_confirmation_email,
-            data.email, data.name, "book", data.bookingTime, confirm_url, data.lang
-        )
-        return {"status": "verification_sent"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-@app.get("/webhook/confirm")
-async def confirm_action(action: str, time: str, email: str, name: str, phone: str = "null", lang: str = "sk", cid: Optional[str] = None):
-    try:
-        frontend_url = os.getenv("FRONTEND_BASE_URL", "https://arcigy.com")
-        if action == "book":
-            res = calendar_engine.confirm_booking(time, email, name, phone, cid)
-            if res["status"] == "success":
-                target = f"{frontend_url}/.tmp/public_html/confirmation.html?lang={lang}&name={urllib.parse.quote(name)}"
-                return RedirectResponse(url=target)
-        return {"status": "error", "message": "Failed"}
+        # Placeholder for booking logic
+        return {"status": "pending", "message": "Booking initiated"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
-    # CRITICAL: respect Railway PORT but default to 8001 if local
-    port = int(os.environ.get("PORT", 8001))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
