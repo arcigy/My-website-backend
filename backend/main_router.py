@@ -56,6 +56,7 @@ class AuditSubmit(BaseModel):
     fullname: str
     email: str
     phone: str
+    company: str
     pitch: str
     turnover: str
     journey: str
