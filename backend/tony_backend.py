@@ -136,6 +136,24 @@ def persist_conversation(conversation_id, message, output, formatted_history):
     except Exception as e:
         print(f"Background Persistence Error: {e}")
 
+def persist_audit(data: dict):
+    """
+    Saves the full AI Business Audit data to Supabase.
+    """
+    if not supabase:
+        print("⚠️ Supabase not initialized. Cannot persist audit.")
+        return
+    
+    try:
+        # Clean data (ensure no "null" strings go into the DB if we want real Nulls)
+        clean_data = {k: (v if v != "null" else None) for k, v in data.items()}
+        
+        # Upsert by email - if the user exists, we update their audit info
+        supabase.table("AIAudits").upsert(clean_data, on_conflict="email").execute()
+        print(f"✅ Audit successfully persisted for: {clean_data.get('email')}")
+    except Exception as e:
+        print(f"❌ Supabase Audit Error: {e}")
+
 def get_tony_response(message, conversation_id, history, user_lang=None, user_data=None):
     """
     Handles the AI reasoning using the external prompt.

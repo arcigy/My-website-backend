@@ -52,6 +52,17 @@ class BookingConfirm(BaseModel):
     lang: Any = "sk"
     conversationID: Any = None
 
+class AuditSubmit(BaseModel):
+    fullname: str
+    email: str
+    phone: str
+    pitch: str
+    turnover: str
+    journey: str
+    dream: str
+    problem: str
+    bottleneck: str
+
 # Global reference for safe access
 tony_module = None
 try:
@@ -108,6 +119,22 @@ async def initiate_booking(data: BookingConfirm, background_tasks: BackgroundTas
         # Placeholder for booking logic
         return {"status": "pending", "message": "Booking initiated"}
     except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/webhook/audit-submit")
+async def audit_submit(data: AuditSubmit, background_tasks: BackgroundTasks):
+    print(f"🔹 Audit Submission received for: {data.email}")
+    if not tony_module:
+        return {"status": "error", "message": "Backend logic not loaded"}
+    
+    try:
+        if hasattr(tony_module, 'persist_audit'):
+            background_tasks.add_task(tony_module.persist_audit, data.dict())
+            return {"status": "success", "message": "Audit data received and persistence scheduled"}
+        else:
+            return {"status": "error", "message": "Persistence function missing"}
+    except Exception as e:
+        print(f"❌ Audit Webhook Error: {e}")
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
