@@ -56,18 +56,36 @@ if OPENAI_API_KEY:
 else:
     print("   ❌ OpenAI: NOT CONFIGURED")
 
-# Load System Prompt
+# Load Knowledge Base and System Prompt
+KNOWLEDGE_PATH = os.path.join(os.path.dirname(__file__), "arcigy_knowledge.md")
 LOGICAL_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "tony_prompt.md")
 DEV_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "directives", "tony_prompt.md")
 PROMPT_PATH = LOGICAL_PROMPT_PATH if os.path.exists(LOGICAL_PROMPT_PATH) else DEV_PROMPT_PATH
 
+def load_knowledge_base():
+    try:
+        if os.path.exists(KNOWLEDGE_PATH):
+            with open(KNOWLEDGE_PATH, "r", encoding="utf-8") as f:
+                return f.read()
+    except Exception as e:
+        print(f"Error loading knowledge base: {e}")
+    return ""
+
 def load_system_prompt():
     try:
-        with open(PROMPT_PATH, "r", encoding="utf-8") as f:
-            return f.read()
+        prompt_content = ""
+        if os.path.exists(PROMPT_PATH):
+            with open(PROMPT_PATH, "r", encoding="utf-8") as f:
+                prompt_content = f.read()
+        
+        knowledge = load_knowledge_base()
+        if knowledge:
+            prompt_content += "\n\n## 📚 BUSINESS KNOWLEDGE BASE\n" + knowledge
+            
+        return prompt_content
     except Exception as e:
         print(f"Error loading prompt: {e}")
-        return "You are Tony, a helpful AI assistant."
+        return "You are Tony, a helpful AI assistant for ArciGy."
 
 def persist_conversation(conversation_id, message, output, formatted_history):
     """
