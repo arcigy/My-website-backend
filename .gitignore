@@ -1,9 +1,0 @@
-__pycache__/
-*.py[cod]
-.env
-.venv
-.tmp/
-*.json
-!README.md
-!requirements.txt
-!Procfile
