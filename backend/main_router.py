@@ -55,10 +55,20 @@ class BookingConfirm(BaseModel):
 # Global reference for safe access
 tony_module = None
 try:
-    import tony_backend
+    # Try package-style import first (for production)
+    import backend.tony_backend as tony_backend
     tony_module = tony_backend
+    print("✅ Logic Module loaded via [backend.tony_backend]")
 except ImportError:
-    pass
+    try:
+        # Try local import (for local dev)
+        import tony_backend
+        tony_module = tony_backend
+        print("✅ Logic Module loaded via [tony_backend]")
+    except ImportError as e:
+        print(f"❌ Logic Module FAILED to load: {e}")
+        import traceback
+        traceback.print_exc()
 
 @app.get("/")
 def home():
