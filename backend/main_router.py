@@ -139,15 +139,15 @@ async def audit_submit(data: AuditSubmit, background_tasks: BackgroundTasks):
         return {"status": "error", "message": str(e)}
 
 @app.get("/webhook/verify-email")
-async def verify_email_endpoint(email: str):
+async def verify_email_endpoint(email: str, lang: str = "sk"):
     is_valid, message, suggestion = False, "Internal Error", None
     try:
         from backend.utils.email_validator import validate_email_deep
-        is_valid, message, suggestion = validate_email_deep(email)
+        is_valid, message, suggestion = validate_email_deep(email, lang)
     except ImportError:
         try:
             from utils.email_validator import validate_email_deep
-            is_valid, message, suggestion = validate_email_deep(email)
+            is_valid, message, suggestion = validate_email_deep(email, lang)
         except ImportError as e:
             print(f"❌ Email Validator import error: {e}")
             return {"valid": True, "message": "Validation bypassed", "suggestion": None}
