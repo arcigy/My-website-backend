@@ -138,5 +138,25 @@ async def audit_submit(data: AuditSubmit, background_tasks: BackgroundTasks):
         print(f"❌ Audit Webhook Error: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.get("/webhook/verify-email")
+async def verify_email_endpoint(email: str):
+    is_valid, message, suggestion = False, "Internal Error", None
+    try:
+        from backend.utils.email_validator import validate_email_deep
+        is_valid, message, suggestion = validate_email_deep(email)
+    except ImportError:
+        try:
+            from utils.email_validator import validate_email_deep
+            is_valid, message, suggestion = validate_email_deep(email)
+        except ImportError as e:
+            print(f"❌ Email Validator import error: {e}")
+            return {"valid": True, "message": "Validation bypassed", "suggestion": None}
+
+    return {
+        "valid": is_valid,
+        "message": message,
+        "suggestion": suggestion
+    }
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
