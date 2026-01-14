@@ -15,7 +15,7 @@ SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.hostinger.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 465))
 # Ensure we handle the potentially quoted string from env or simple string
 try:
-    _acc = os.getenv("EMAIL_ACCOUNT_BRANISLAV", "branislav@arcigy.com:password")
+    _acc = os.getenv("EMAIL_ACCOUNT_BRANISLAV", "hello@arcigy.group:password")
     if ":" in _acc:
         SMTP_USER, SMTP_PASS = _acc.strip('"\'').split(":", 1)
     else:
@@ -26,7 +26,7 @@ except:
 
 # Brevo Config (Primary)
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
-SENDER_EMAIL = "branislav@arcigy.com" # This must be a verified sender in Brevo
+SENDER_EMAIL = "hello@arcigy.group" # This must be a verified sender in Brevo
 SENDER_NAME = "ArciGy"
 
 def get_paths():

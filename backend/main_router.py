@@ -116,10 +116,22 @@ async def availability_endpoint():
 
 @app.post("/webhook/calendar-initiate-book")
 async def initiate_booking(data: BookingConfirm, background_tasks: BackgroundTasks):
+    print(f"🔹 Booking Initiation received for: {data.email}")
     try:
-        # Placeholder for booking logic
-        return {"status": "pending", "message": "Booking initiated"}
+        from calendar_engine import confirm_booking
+        # 1. Confirm with Cal.com
+        result = confirm_booking(
+            data.bookingTime, data.email, data.name, data.phone, data.conversationID
+        )
+        
+        # 2. Persist to Supabase if successful
+        if result.get("status") == "success" and tony_module:
+            if hasattr(tony_module, 'persist_booking'):
+                background_tasks.add_task(tony_module.persist_booking, data.dict())
+        
+        return result
     except Exception as e:
+        print(f"❌ Booking Error: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.post("/webhook/audit-submit")

@@ -154,6 +154,25 @@ def persist_audit(data: dict):
     except Exception as e:
         print(f"❌ Supabase Audit Error: {e}")
 
+def persist_booking(data: dict):
+    """
+    Saves a confirmed calendar booking to Supabase.
+    """
+    if not supabase:
+        print("⚠️ Supabase not initialized. Cannot persist booking.")
+        return
+    
+    try:
+        # Clean data
+        clean_data = {k: (v if v != "null" else None) for k, v in data.items()}
+        
+        # Upsert by email and bookingTime to avoid duplicates if they book the same slot
+        # Note: This assumes a composite unique key or just handling by email/time
+        supabase.table("CalendarBookings").upsert(clean_data, on_conflict="email,bookingTime").execute()
+        print(f"✅ Booking successfully persisted for: {clean_data.get('email')} at {clean_data.get('bookingTime')}")
+    except Exception as e:
+        print(f"❌ Supabase Booking Error: {e}")
+
 def get_tony_response(message, conversation_id, history, user_lang=None, user_data=None):
     """
     Handles the AI reasoning using the external prompt.
@@ -222,6 +241,6 @@ def get_tony_response(message, conversation_id, history, user_lang=None, user_da
 
 if __name__ == "__main__":
     # Local Test
-    test_msg = "Ahoj, ja som Branislav Laubert, moj email je branislav@arcigy.com a tel cislo +421912345678. Chcem demo."
+    test_msg = "Ahoj, ja som Branislav Laubert, moj email je hello@arcigy.group a tel cislo +421912345678. Chcem demo."
     result = get_tony_response(test_msg, "test_conv_123", [])
     print(json.dumps(result, indent=2))
