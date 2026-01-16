@@ -173,6 +173,32 @@ def persist_booking(data: dict):
     except Exception as e:
         print(f"❌ Supabase Booking Error: {e}")
 
+def persist_pre_audit(data: dict):
+    """
+    Saves the Pre-Audit Intake form to Supabase.
+    """
+    if not supabase:
+        print("⚠️ Supabase not initialized. Cannot persist pre-audit.")
+        return
+
+    try:
+        # Clean data (ensure source list is JSONb friendly if needed, though Supabase handles lists usually)
+        clean_data = {k: (v if v != "" else None) for k, v in data.items()}
+        
+        # We don't necessarily want to UPSERT on email only, because one user might fill it multiple times?
+        # But usually we deduplicate by email. Let's assume INSERT is better, or UPSERT by email if we want only latest.
+        # User requested: "jeden formular, aj druhy formular isli do jednej databazy"
+        # Let's just INSERT. If we need upsert, we need a unique constraint.
+        # However, supabase.table().insert() is standard.
+        
+        # Adding timestamp
+        clean_data['created_at'] = datetime.datetime.now().isoformat()
+        
+        supabase.table("PreAuditIntakes").insert(clean_data).execute()
+        print(f"✅ Pre-Audit successfully persisted for: {clean_data.get('email')} (Ref: {clean_data.get('referrer')})")
+    except Exception as e:
+        print(f"❌ Supabase Pre-Audit Error: {e}")
+
 def get_tony_response(message, conversation_id, history, user_lang=None, user_data=None):
     """
     Handles the AI reasoning using the external prompt.

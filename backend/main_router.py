@@ -64,6 +64,29 @@ class AuditSubmit(BaseModel):
     problem: str
     bottleneck: str
 
+class PreAuditIntake(BaseModel):
+    name: str = ""
+    email: str = ""
+    business_name: str = ""
+    industry: str = ""
+    employees: str = ""
+    what_sell: str = ""
+    typical_customer: str = ""
+    source: List[str] = []
+    top_tasks: str = ""
+    magic_wand: str = ""
+    leads_challenge: str = ""
+    sales_team: str = ""
+    closing_issues: str = ""
+    delivery_time: str = ""
+    ops_recurring: str = ""
+    support_headaches: str = ""
+    ai_experience: str = ""
+    which_ai_tools: str = ""
+    success_definition: str = ""
+    specific_focus: str = ""
+    referrer: str = "Unknown"
+
 # Global reference for safe access
 tony_module = None
 try:
@@ -148,6 +171,23 @@ async def audit_submit(data: AuditSubmit, background_tasks: BackgroundTasks):
             return {"status": "error", "message": "Persistence function missing"}
     except Exception as e:
         print(f"❌ Audit Webhook Error: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.post("/webhook/pre-audit-submit")
+async def pre_audit_submit(data: PreAuditIntake, background_tasks: BackgroundTasks):
+    print(f"🔹 Pre-Audit Intake received from: {data.email} via {data.referrer}")
+    if not tony_module:
+         return {"status": "error", "message": "Backend logic not loaded"}
+
+    try:
+        if hasattr(tony_module, 'persist_pre_audit'):
+            background_tasks.add_task(tony_module.persist_pre_audit, data.dict())
+            return {"status": "success", "message": "Intake received"}
+        else:
+            print("❌ tony_backend.persist_pre_audit NOT FOUND")
+            return {"status": "error", "message": "Persistence function missing"}
+    except Exception as e:
+        print(f"❌ Pre-Audit Webhook Error: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.get("/webhook/verify-email")
