@@ -52,6 +52,18 @@ class BookingConfirm(BaseModel):
     lang: Any = "sk"
     conversationID: Any = None
 
+class AuditSubmit(BaseModel):
+    fullname: str
+    email: str
+    phone: str
+    company: str
+    pitch: str
+    turnover: str
+    journey: str
+    dream: str
+    problem: str
+    bottleneck: str
+
 # Global reference for safe access
 tony_module = None
 try:
@@ -104,11 +116,59 @@ async def availability_endpoint():
 
 @app.post("/webhook/calendar-initiate-book")
 async def initiate_booking(data: BookingConfirm, background_tasks: BackgroundTasks):
+    print(f"🔹 Booking Initiation received for: {data.email}")
     try:
-        # Placeholder for booking logic
-        return {"status": "pending", "message": "Booking initiated"}
+        from calendar_engine import confirm_booking
+        # 1. Confirm with Cal.com
+        result = confirm_booking(
+            data.bookingTime, data.email, data.name, data.phone, data.conversationID
+        )
+        
+        # 2. Persist to Supabase if successful
+        if result.get("status") == "success" and tony_module:
+            if hasattr(tony_module, 'persist_booking'):
+                background_tasks.add_task(tony_module.persist_booking, data.dict())
+        
+        return result
     except Exception as e:
+        print(f"❌ Booking Error: {e}")
         return {"status": "error", "message": str(e)}
+
+@app.post("/webhook/audit-submit")
+async def audit_submit(data: AuditSubmit, background_tasks: BackgroundTasks):
+    print(f"🔹 Audit Submission received for: {data.email}")
+    if not tony_module:
+        return {"status": "error", "message": "Backend logic not loaded"}
+    
+    try:
+        if hasattr(tony_module, 'persist_audit'):
+            background_tasks.add_task(tony_module.persist_audit, data.dict())
+            return {"status": "success", "message": "Audit data received and persistence scheduled"}
+        else:
+            return {"status": "error", "message": "Persistence function missing"}
+    except Exception as e:
+        print(f"❌ Audit Webhook Error: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/webhook/verify-email")
+async def verify_email_endpoint(email: str, lang: str = "sk"):
+    is_valid, message, suggestion = False, "Internal Error", None
+    try:
+        from backend.utils.email_validator import validate_email_deep
+        is_valid, message, suggestion = validate_email_deep(email, lang)
+    except ImportError:
+        try:
+            from utils.email_validator import validate_email_deep
+            is_valid, message, suggestion = validate_email_deep(email, lang)
+        except ImportError as e:
+            print(f"❌ Email Validator import error: {e}")
+            return {"valid": True, "message": "Validation bypassed", "suggestion": None}
+
+    return {
+        "valid": is_valid,
+        "message": message,
+        "suggestion": suggestion
+    }
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
