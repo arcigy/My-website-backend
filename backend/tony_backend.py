@@ -265,6 +265,50 @@ def get_tony_response(message, conversation_id, history, user_lang=None, user_da
             "error": str(e)
         }, ""
 
+def generate_audit_confirmation(data: dict):
+    """
+    Generates a witty, personalized confirmation message based on audit data.
+    """
+    if not openai_client:
+        return None
+
+    try:
+        # Extract relevant fields for context
+        name = data.get('name', 'Neznámy')
+        business = data.get('business_name', '')
+        industry = data.get('industry', '')
+        problem = data.get('leads_challenge', '') or data.get('closing_issues', '') or 'generic business problems'
+        
+        system_prompt = """
+        You are Tony, a witty and slightly cheeky AI business consultant for ArciGy. 
+        Your task is to generate a SHORT, FUNNY, ONE-LINER confirmation message for a user who just submitted a business audit form.
+        
+        Guidelines:
+        - Be witty but friendly. A tiny bit of roasting is okay if it's about their industry struggles, but don't be offensive.
+        - Reference their industry or specific problem if possible.
+        - Keep it under 25 words.
+        - Respond in SLOVAK language (unless the input suggests English, but default to Slovak).
+        - Examples of tone: 
+          "Jozef, realitky si dávame na večeru, priprav sa na zmenu."
+          "Skladové zásoby v exceli? Neboj, to opravíme skôr než dopiješ kávu."
+        """
+
+        user_prompt = f"User: {name}, Business: {business}, Industry: {industry}, Main Pain Point: {problem}. Generate the one-liner."
+
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            max_tokens=60
+        )
+
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"❌ Auto-Reply Generation Error: {e}")
+        return None
+
 if __name__ == "__main__":
     # Local Test
     test_msg = "Ahoj, ja som Branislav Laubert, moj email je hello@arcigy.group a tel cislo +421912345678. Chcem demo."

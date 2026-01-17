@@ -177,18 +177,26 @@ async def audit_submit(data: AuditSubmit, background_tasks: BackgroundTasks):
 async def pre_audit_submit(data: PreAuditIntake, background_tasks: BackgroundTasks):
     print(f"🔹 Pre-Audit Intake received from: {data.email} via {data.referrer}")
     if not tony_module:
-         return {"status": "error", "message": "Backend logic not loaded"}
+         return {"status": "error", "message": "Backend logic not loaded", "ai_message": None}
 
     try:
+        # 1. Persist Data (Background)
         if hasattr(tony_module, 'persist_pre_audit'):
             background_tasks.add_task(tony_module.persist_pre_audit, data.dict())
-            return {"status": "success", "message": "Intake received"}
         else:
             print("❌ tony_backend.persist_pre_audit NOT FOUND")
-            return {"status": "error", "message": "Persistence function missing"}
+
+        # 2. Generate AI Confirmation (Foreground - wait for it to display on frontend)
+        ai_msg = None
+        if hasattr(tony_module, 'generate_audit_confirmation'):
+            # Running this synchronously because we need the return value immediately for the redirect page
+            ai_msg = tony_module.generate_audit_confirmation(data.dict())
+        
+        return {"status": "success", "message": "Intake received", "ai_message": ai_msg}
+
     except Exception as e:
         print(f"❌ Pre-Audit Webhook Error: {e}")
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": str(e), "ai_message": None}
 
 @app.get("/webhook/verify-email")
 async def verify_email_endpoint(email: str, lang: str = "sk"):
