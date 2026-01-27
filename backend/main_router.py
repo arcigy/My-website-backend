@@ -28,6 +28,20 @@ if os.path.exists(assets_path):
 else:
     print(f"⚠️ Assets dir NOT found at: {assets_path}")
 
+# 1. CANONICAL REDIRECT (Force www.arcigy.com)
+@app.middleware("http")
+async def force_canonical_host(request: Request, call_next):
+    host = request.headers.get("host", "")
+    if host and "www.arcigy.com" not in host and "localhost" not in host and "127.0.0.1" not in host:
+        # Construct new URL on the primary domain
+        url = str(request.url).replace(host, "www.arcigy.com")
+        if url.startswith("http://"):
+            url = url.replace("http://", "https://")
+        return RedirectResponse(url=url, status_code=301)
+    
+    response = await call_next(request)
+    return response
+
 # 2. NUCLEAR CORS (Allow everything explicitly via regex to support credentials if needed)
 app.add_middleware(
     CORSMiddleware,
@@ -122,7 +136,7 @@ async def chat_endpoint(data: ChatMessage, background_tasks: BackgroundTasks):
         response_json, formatted_history = tony_module.get_tony_response(
             data.message, data.conversationID, data.history, data.lang, data.userData
         )
-        if hasattr(tony_module, 'supabase') and tony_module.supabase:
+        if hasattr(tony_module, 'persist_conversation'):
              background_tasks.add_task(tony_module.persist_conversation, data.conversationID, data.message, response_json, formatted_history)
         return response_json
     except Exception as e:
