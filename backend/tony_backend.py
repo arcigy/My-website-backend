@@ -31,7 +31,8 @@ def mask_key(k):
 # Configurations
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Database Configuration (Prioritize Env Vars, Fallback to known Railway creds for transition)
+# Database Configuration
+DATABASE_URL = os.getenv("DATABASE_URL")
 DB_HOST = os.getenv("DB_HOST", "shinkansen.proxy.rlwy.net")
 DB_PORT = os.getenv("DB_PORT", "51580")
 DB_NAME = os.getenv("DB_NAME", "railway")
@@ -40,11 +41,12 @@ DB_PASS = os.getenv("DB_PASSWORD", "xqhcUQFWracYZcigUmiiUNBYRbUAaOEO")
 
 print(f"🤖 Tony Initialization (Postgres Edition):")
 print(f"   OPENAI_KEY: {mask_key(OPENAI_API_KEY)}")
-print(f"   DB_HOST: {DB_HOST}")
+print(f"   DB_MODE: {'DATABASE_URL' if DATABASE_URL else 'FALLBACK_PARAMS'}")
 
 # --- DATABASE MANAGER ---
 class DatabaseManager:
     def __init__(self):
+        self.db_url = DATABASE_URL
         self.conn_params = {
             "host": DB_HOST,
             "port": DB_PORT,
@@ -55,6 +57,8 @@ class DatabaseManager:
 
     def get_connection(self):
         try:
+            if self.db_url:
+                return psycopg2.connect(self.db_url)
             return psycopg2.connect(**self.conn_params)
         except Exception as e:
             print(f"❌ Database Connection Error: {e}")
