@@ -21,6 +21,7 @@ else:
 base_dir = os.path.dirname(os.path.abspath(__file__)) # backend/
 root_dir = os.path.dirname(base_dir) # cloud_automations/Arcigy_website
 assets_path = os.path.join(root_dir, "assets")
+public_html_path = os.path.join(root_dir, "public_html")
 
 if os.path.exists(assets_path):
     app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
