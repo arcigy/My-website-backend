@@ -1,6 +1,6 @@
 from fastapi import FastAPI, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles # Added for serving images
 from pydantic import BaseModel
 from typing import List, Optional, Any
@@ -232,8 +232,24 @@ async def verify_email_endpoint(email: str, lang: str = "sk"):
         "suggestion": suggestion
     }
 
+# EXPLICIT ROUTES FOR CLEAN URLs (SEO)
+@app.get("/about", include_in_schema=False)
+async def get_about():
+    return FileResponse(os.path.join(public_html_path, "about.html"))
+
+@app.get("/services", include_in_schema=False)
+async def get_services():
+    return FileResponse(os.path.join(public_html_path, "services.html"))
+
+@app.get("/pricing", include_in_schema=False)
+async def get_pricing():
+    return FileResponse(os.path.join(public_html_path, "pricing.html"))
+
+@app.get("/contact", include_in_schema=False)
+async def get_contact():
+    return FileResponse(os.path.join(public_html_path, "contact.html"))
+
 # MOUNT STATIC SITE (Must be last to avoid blocking API routes)
-public_html_path = os.path.join(root_dir, "public_html")
 if os.path.exists(public_html_path):
     app.mount("/", StaticFiles(directory=public_html_path, html=True), name="static_site")
     print(f"✅ Website mounted from: {public_html_path}")
