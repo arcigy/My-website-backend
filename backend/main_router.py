@@ -105,9 +105,9 @@ except ImportError:
         import traceback
         traceback.print_exc()
 
-@app.get("/")
-def home():
-    return {"status": "online", "agent": "Tony AI"}
+# @app.get("/")
+# def home():
+#     return {"status": "online", "agent": "Tony AI"}
 
 @app.post("/webhook/chat")
 async def chat_endpoint(data: ChatMessage, background_tasks: BackgroundTasks):
@@ -217,6 +217,14 @@ async def verify_email_endpoint(email: str, lang: str = "sk"):
         "message": message,
         "suggestion": suggestion
     }
+
+# MOUNT STATIC SITE (Must be last to avoid blocking API routes)
+public_html_path = os.path.join(root_dir, "public_html")
+if os.path.exists(public_html_path):
+    app.mount("/", StaticFiles(directory=public_html_path, html=True), name="static_site")
+    print(f"✅ Website mounted from: {public_html_path}")
+else:
+    print(f"⚠️ public_html NOT found at: {public_html_path}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))

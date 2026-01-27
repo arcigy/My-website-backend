@@ -1,8 +1,9 @@
 import os
 import json
 import datetime
+import psycopg2
+from psycopg2.extras import Json
 from openai import OpenAI
-from supabase import create_client, Client
 from dotenv import load_dotenv
 
 # Load environment variables from various possible locations
@@ -28,24 +29,52 @@ def mask_key(k):
     return k[:4] + "..." + k[-4:] if len(k) > 8 else "***"
 
 # Configurations
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-print(f"🤖 Tony Initialization:")
+# Database Configuration (Prioritize Env Vars, Fallback to known Railway creds for transition)
+DB_HOST = os.getenv("DB_HOST", "shinkansen.proxy.rlwy.net")
+DB_PORT = os.getenv("DB_PORT", "51580")
+DB_NAME = os.getenv("DB_NAME", "railway")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASS = os.getenv("DB_PASSWORD", "xqhcUQFWracYZcigUmiiUNBYRbUAaOEO")
+
+print(f"🤖 Tony Initialization (Postgres Edition):")
 print(f"   OPENAI_KEY: {mask_key(OPENAI_API_KEY)}")
-print(f"   SUPABASE_URL: {'SET' if SUPABASE_URL else 'MISSING'}")
-print(f"   SUPABASE_KEY: {mask_key(SUPABASE_KEY)}")
+print(f"   DB_HOST: {DB_HOST}")
 
-# Initialize clients
-supabase: Client = None
-if SUPABASE_URL and SUPABASE_KEY:
-    try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        print("   ✅ Supabase: Connected")
-    except Exception as e:
-        print(f"   ❌ Supabase Error: {e}")
+# --- DATABASE MANAGER ---
+class DatabaseManager:
+    def __init__(self):
+        self.conn_params = {
+            "host": DB_HOST,
+            "port": DB_PORT,
+            "database": DB_NAME,
+            "user": DB_USER,
+            "password": DB_PASS
+        }
 
+    def get_connection(self):
+        try:
+            return psycopg2.connect(**self.conn_params)
+        except Exception as e:
+            print(f"❌ Database Connection Error: {e}")
+            return None
+
+    def execute_query(self, query, params=None):
+        conn = self.get_connection()
+        if not conn: return
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(query, params)
+        except Exception as e:
+            print(f"❌ Query Error: {e}")
+        finally:
+            conn.close()
+
+db = DatabaseManager()
+
+# Initialize OpenAI
 openai_client: OpenAI = None
 if OPENAI_API_KEY:
     try:
@@ -87,117 +116,158 @@ def load_system_prompt():
         print(f"Error loading prompt: {e}")
         return "You are Tony, a helpful AI assistant for ArciGy."
 
+# --- PERSISTENCE FUNCTIONS (REWRITTEN FOR POSTGRES) ---
+
 def persist_conversation(conversation_id, message, output, formatted_history):
     """
-    Handles database updates in the background.
+    Handles database updates for chat history and lead extraction.
     """
-    if not supabase:
-        print("⚠️ Supabase client not initialized. Skipping persistence.")
-        return
     try:
         # 1. Update Memory
-        conv_data = {
-            "messageID": conversation_id,
-            "conversation": formatted_history + f"\nUser: {message}\nBot: {output.get('response', '')}"
-        }
-        try:
-            supabase.table("ConversationMemory").upsert(conv_data, on_conflict="messageID").execute()
-        except Exception as db_err:
-            print(f"Database Warning (Memory): {db_err}")
+        full_conversation = formatted_history + f"\nUser: {message}\nBot: {output.get('response', '')}"
+        
+        query_memory = """
+            INSERT INTO "ConversationMemory" ("messageID", "conversation", "created_at")
+            VALUES (%s, %s, NOW())
+            ON CONFLICT ("messageID") 
+            DO UPDATE SET "conversation" = EXCLUDED."conversation";
+        """
+        db.execute_query(query_memory, (conversation_id, full_conversation))
 
         # 2. Update Leads (Patients)
         ext = output.get("extractedData", {})
-        
-        # Primary fields from legacy keys or extractedData
         p_forname = output.get("forname")
         p_surname = output.get("surname")
         p_email = output.get("email")
         p_phone = output.get("phone")
 
-        # If any is "null", try to fill from extractedData (especially company/turnover)
         is_valid = all(x and x != "null" for x in [p_forname, p_surname, p_email, p_phone])
         
         if is_valid:
-            patient_data = {
-                "forename": p_forname,
-                "surname": p_surname,
-                "email": p_email,
-                "phone": p_phone,
-                "company": ext.get("company") if ext.get("company") != "null" else None,
-                "turnover": ext.get("turnover") if ext.get("turnover") != "null" else None
-            }
-            # Clean up Nones
-            patient_data = {k: v for k, v in patient_data.items() if v is not None}
+            # Prepare extra info for 'other_relevant_info' since we don't have company/turnover columns anymore
+            extra_info = {}
+            if ext.get("company") and ext.get("company") != "null":
+                extra_info["company"] = ext.get("company")
+            if ext.get("turnover") and ext.get("turnover") != "null":
+                extra_info["turnover"] = ext.get("turnover")
             
-            try:
-                supabase.table("Patients").upsert(patient_data, on_conflict="phone").execute()
-            except Exception as db_err:
-                print(f"Database Warning (Patients): {db_err}")
+            other_info_str = json.dumps(extra_info) if extra_info else None
+            
+            query_patient = """
+                INSERT INTO "Patients" ("forename", "surname", "email", "phone", "other_relevant_info", "created_at")
+                VALUES (%s, %s, %s, %s, %s, NOW())
+                ON CONFLICT ("phone") 
+                DO UPDATE SET 
+                    "email" = EXCLUDED."email",
+                    "other_relevant_info" = COALESCE(EXCLUDED."other_relevant_info", "Patients"."other_relevant_info");
+            """
+            db.execute_query(query_patient, (p_forname, p_surname, p_email, p_phone, other_info_str))
+
     except Exception as e:
         print(f"Background Persistence Error: {e}")
 
 def persist_audit(data: dict):
     """
-    Saves the full AI Business Audit data to Supabase.
+    Saves the full AI Business Audit data.
     """
-    if not supabase:
-        print("⚠️ Supabase not initialized. Cannot persist audit.")
-        return
-    
     try:
-        # Clean data (ensure no "null" strings go into the DB if we want real Nulls)
         clean_data = {k: (v if v != "null" else None) for k, v in data.items()}
         
-        # Upsert by email - if the user exists, we update their audit info
-        supabase.table("AIAudits").upsert(clean_data, on_conflict="email").execute()
+        query = """
+            INSERT INTO "AIAudits" (
+                "fullname", "email", "phone", "company", "pitch", 
+                "turnover", "journey", "dream", "problem", "bottleneck", "created_at"
+            ) VALUES (
+                %(fullname)s, %(email)s, %(phone)s, %(company)s, %(pitch)s,
+                %(turnover)s, %(journey)s, %(dream)s, %(problem)s, %(bottleneck)s, NOW()
+            )
+            ON CONFLICT ("email") 
+            DO UPDATE SET 
+                "fullname" = EXCLUDED."fullname",
+                "phone" = EXCLUDED."phone",
+                "company" = EXCLUDED."company",
+                "pitch" = EXCLUDED."pitch",
+                "problem" = EXCLUDED."problem";
+        """
+        db.execute_query(query, clean_data)
         print(f"✅ Audit successfully persisted for: {clean_data.get('email')}")
     except Exception as e:
-        print(f"❌ Supabase Audit Error: {e}")
+        print(f"❌ Postgres Audit Error: {e}")
 
 def persist_booking(data: dict):
     """
-    Saves a confirmed calendar booking to Supabase.
+    Saves a confirmed calendar booking.
     """
-    if not supabase:
-        print("⚠️ Supabase not initialized. Cannot persist booking.")
-        return
-    
     try:
-        # Clean data
         clean_data = {k: (v if v != "null" else None) for k, v in data.items()}
         
-        # Upsert by email and bookingTime to avoid duplicates if they book the same slot
-        # Note: This assumes a composite unique key or just handling by email/time
-        supabase.table("CalendarBookings").upsert(clean_data, on_conflict="email,bookingTime").execute()
-        print(f"✅ Booking successfully persisted for: {clean_data.get('email')} at {clean_data.get('bookingTime')}")
+        query = """
+            INSERT INTO "CalendarBookings" (
+                "bookingTime", "email", "name", "phone", "lang", "conversationID", "created_at"
+            ) VALUES (
+                %(bookingTime)s, %(email)s, %(name)s, %(phone)s, %(lang)s, %(conversationID)s, NOW()
+            )
+            ON CONFLICT ("email", "bookingTime") DO NOTHING;
+        """
+        db.execute_query(query, clean_data)
+        print(f"✅ Booking persisted for: {clean_data.get('email')}")
     except Exception as e:
-        print(f"❌ Supabase Booking Error: {e}")
+        print(f"❌ Postgres Booking Error: {e}")
 
 def persist_pre_audit(data: dict):
     """
-    Saves the Pre-Audit Intake form to Supabase.
+    Saves the Pre-Audit Intake form.
     """
-    if not supabase:
-        print("⚠️ Supabase not initialized. Cannot persist pre-audit.")
-        return
-
     try:
-        # Clean data (ensure source list is JSONb friendly if needed, though Supabase handles lists usually)
         clean_data = {k: (v if v != "" else None) for k, v in data.items()}
         
-        # We don't necessarily want to UPSERT on email only, because one user might fill it multiple times?
-        # But usually we deduplicate by email. Let's assume INSERT is better, or UPSERT by email if we want only latest.
-        # User requested: "jeden formular, aj druhy formular isli do jednej databazy"
-        # Let's just INSERT. If we need upsert, we need a unique constraint.
-        # However, supabase.table().insert() is standard.
+        # Determine source correctly (jsonb compatible)
+        source_val = Json(clean_data.get('source', []))
         
-        # Adding timestamp
-        clean_data['created_at'] = datetime.datetime.now().isoformat()
-        
-        supabase.table("PreAuditIntakes").insert(clean_data).execute()
-        print(f"✅ Pre-Audit successfully persisted for: {clean_data.get('email')} (Ref: {clean_data.get('referrer')})")
+        # Prepare params to match exact columns
+        params = {
+            'name': clean_data.get('name'),
+            'email': clean_data.get('email'),
+            'business_name': clean_data.get('business_name'),
+            'industry': clean_data.get('industry'),
+            'employees': clean_data.get('employees'),
+            'what_sell': clean_data.get('what_sell'),
+            'typical_customer': clean_data.get('typical_customer'),
+            'source': source_val,
+            'top_tasks': clean_data.get('top_tasks'),
+            'magic_wand': clean_data.get('magic_wand'),
+            'leads_challenge': clean_data.get('leads_challenge'),
+            'sales_team': clean_data.get('sales_team'),
+            'closing_issues': clean_data.get('closing_issues'),
+            'delivery_time': clean_data.get('delivery_time'),
+            'ops_recurring': clean_data.get('ops_recurring'),
+            'support_headaches': clean_data.get('support_headaches'),
+            'ai_experience': clean_data.get('ai_experience'),
+            'which_ai_tools': clean_data.get('which_ai_tools'),
+            'success_definition': clean_data.get('success_definition'),
+            'specific_focus': clean_data.get('specific_focus'),
+            'referrer': clean_data.get('referrer')
+        }
+
+        query = """
+            INSERT INTO "PreAuditIntakes" (
+                "name", "email", "business_name", "industry", "employees", "what_sell", 
+                "typical_customer", "source", "top_tasks", "magic_wand", "leads_challenge", 
+                "sales_team", "closing_issues", "delivery_time", "ops_recurring", 
+                "support_headaches", "ai_experience", "which_ai_tools", "success_definition", 
+                "specific_focus", "referrer", "created_at"
+            ) VALUES (
+                %(name)s, %(email)s, %(business_name)s, %(industry)s, %(employees)s, %(what_sell)s,
+                %(typical_customer)s, %(source)s, %(top_tasks)s, %(magic_wand)s, %(leads_challenge)s,
+                %(sales_team)s, %(closing_issues)s, %(delivery_time)s, %(ops_recurring)s,
+                %(support_headaches)s, %(ai_experience)s, %(which_ai_tools)s, %(success_definition)s,
+                %(specific_focus)s, %(referrer)s, NOW()
+            );
+        """
+        db.execute_query(query, params)
+        print(f"✅ Pre-Audit persisted for: {clean_data.get('email')}")
     except Exception as e:
-        print(f"❌ Supabase Pre-Audit Error: {e}")
+        print(f"❌ Postgres Pre-Audit Error: {e}")
 
 def get_tony_response(message, conversation_id, history, user_lang=None, user_data=None):
     """
@@ -217,11 +287,9 @@ def get_tony_response(message, conversation_id, history, user_lang=None, user_da
         if "{now}" in system_prompt:
             system_prompt = system_prompt.replace("{now}", str(datetime.datetime.now()))
         
-        # Guide the AI on the required language
         detected_lang = user_lang if user_lang else ('sk' if any(word in message.lower() for word in ['ahoj', 'chcem', 'termin', 'ano', 'dobry']) else 'en')
         lang_instruction = f"IMPORTANT: Respond in {detected_lang.upper()} language." if detected_lang else ""
 
-        # Format User Data for Context
         user_ctx_str = ""
         if user_data:
             try:
@@ -273,7 +341,6 @@ def generate_audit_confirmation(data: dict):
         return None
 
     try:
-        # Extract relevant fields for context
         name = data.get('name', 'Neznámy')
         business = data.get('business_name', '')
         industry = data.get('industry', '')
@@ -288,9 +355,6 @@ def generate_audit_confirmation(data: dict):
         - Reference their industry or specific problem if possible.
         - Keep it under 25 words.
         - Respond in SLOVAK language (unless the input suggests English, but default to Slovak).
-        - Examples of tone: 
-          "Jozef, realitky si dávame na večeru, priprav sa na zmenu."
-          "Skladové zásoby v exceli? Neboj, to opravíme skôr než dopiješ kávu."
         """
 
         user_prompt = f"User: {name}, Business: {business}, Industry: {industry}, Main Pain Point: {problem}. Generate the one-liner."
@@ -311,6 +375,8 @@ def generate_audit_confirmation(data: dict):
 
 if __name__ == "__main__":
     # Local Test
-    test_msg = "Ahoj, ja som Branislav Laubert, moj email je hello@arcigy.group a tel cislo +421912345678. Chcem demo."
-    result = get_tony_response(test_msg, "test_conv_123", [])
-    print(json.dumps(result, indent=2))
+    test_msg = "Ahoj, ja som Branislav Laubert..."
+    # You can comment out to avoid unintentional DB writes on import
+    # result = get_tony_response(test_msg, "test_conv_psql", [])
+    # print(json.dumps(result, indent=2))
+
