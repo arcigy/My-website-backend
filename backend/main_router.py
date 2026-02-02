@@ -33,7 +33,7 @@ else:
 @app.middleware("http")
 async def force_canonical_host(request: Request, call_next):
     host = request.headers.get("host", "")
-    if host and "www.arcigy.com" not in host and "localhost" not in host and "127.0.0.1" not in host:
+    if host and "www.arcigy.com" not in host and "localhost" not in host and "127.0.0.1" not in host and "railway.app" not in host:
         # Construct new URL on the primary domain
         url = str(request.url).replace(host, "www.arcigy.com")
         if url.startswith("http://"):
