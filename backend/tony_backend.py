@@ -3,7 +3,8 @@ import json
 import datetime
 import psycopg2
 from psycopg2.extras import Json
-from openai import OpenAI
+import google.generativeai as genai
+
 from dotenv import load_dotenv
 
 # Load environment variables from various possible locations
@@ -29,7 +30,9 @@ def mask_key(k):
     return k[:4] + "..." + k[-4:] if len(k) > 8 else "***"
 
 # Configurations
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash") # Default to 1.5 if 2.0 isn't set, but we set it in .env
+
 
 # Database Configuration
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -40,7 +43,7 @@ DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASS = os.getenv("DB_PASSWORD", "xqhcUQFWracYZcigUmiiUNBYRbUAaOEO")
 
 print(f"🤖 Tony Initialization (Postgres Edition):")
-print(f"   OPENAI_KEY: {mask_key(OPENAI_API_KEY)}")
+print(f"   GEMINI_KEY: {mask_key(GEMINI_API_KEY)}")
 print(f"   DB_MODE: {'DATABASE_URL' if DATABASE_URL else 'FALLBACK_PARAMS'}")
 
 # --- DATABASE MANAGER ---
@@ -78,16 +81,16 @@ class DatabaseManager:
 
 db = DatabaseManager()
 
-# Initialize OpenAI
-openai_client: OpenAI = None
-if OPENAI_API_KEY:
+# Initialize Gemini
+if GEMINI_API_KEY:
     try:
-        openai_client = OpenAI(api_key=OPENAI_API_KEY)
-        print("   ✅ OpenAI: Connected")
+        genai.configure(api_key=GEMINI_API_KEY)
+        print(f"   ✅ Gemini: Connected (Model: {GEMINI_MODEL})")
     except Exception as e:
-        print(f"   ❌ OpenAI Error: {e}")
+        print(f"   ❌ Gemini Error: {e}")
 else:
-    print("   ❌ OpenAI: NOT CONFIGURED")
+    print("   ❌ Gemini: NOT CONFIGURED")
+
 
 # Load Knowledge Base and System Prompt
 KNOWLEDGE_PATH = os.path.join(os.path.dirname(__file__), "arcigy_knowledge.md")
@@ -285,8 +288,8 @@ def get_tony_response(message, conversation_id, history, user_lang=None, user_da
         
         # 2. Get AI Response
         system_prompt = load_system_prompt()
-        if not openai_client:
-            raise Exception("OpenAI client not initialized. Check OPENAI_API_KEY variable.")
+        if not GEMINI_API_KEY:
+            raise Exception("Gemini API key not initialized. Check GEMINI_API_KEY variable.")
             
         if "{now}" in system_prompt:
             system_prompt = system_prompt.replace("{now}", str(datetime.datetime.now()))
@@ -301,16 +304,23 @@ def get_tony_response(message, conversation_id, history, user_lang=None, user_da
             except:
                 pass
 
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt + f"\n\n{lang_instruction}\nIMPORTANT: Respond ONLY with a raw JSON object. No markdown blocks."},
-                {"role": "user", "content": f"{user_ctx_str}HISTÓRIA KONVERZÁCIE:\n{formatted_history}\n\nAKTUÁLNA SPRÁVA OD POUŽÍVATEĽA: {message}"}
-            ],
-            response_format={"type": "json_object"}
+        model = genai.GenerativeModel(
+            model_name=GEMINI_MODEL,
+            generation_config={"response_mime_type": "application/json"}
         )
         
-        raw_text = response.choices[0].message.content.strip()
+        prompt = (
+            f"{system_prompt}\n\n"
+            f"{lang_instruction}\n"
+            "IMPORTANT: Respond ONLY with a raw JSON object. No markdown blocks.\n\n"
+            f"{user_ctx_str}"
+            "HISTÓRIA KONVERZÁCIE:\n"
+            f"{formatted_history}\n\n"
+            f"AKTUÁLNA SPRÁVA OD POUŽÍVATEĽA: {message}"
+        )
+
+        response = model.generate_content(prompt)
+        raw_text = response.text.strip()
         
         try:
             output = json.loads(raw_text)
@@ -321,6 +331,7 @@ def get_tony_response(message, conversation_id, history, user_lang=None, user_da
                 output = json.loads(raw_text[start:end+1])
             else:
                 raise
+
         
         lang = user_lang if user_lang else ('sk' if any(word in message.lower() for word in ['ahoj', 'chcem', 'termin', 'ano', 'dobry']) else 'en')
         output['lang'] = lang
@@ -341,7 +352,7 @@ def generate_audit_confirmation(data: dict):
     """
     Generates a witty, personalized confirmation message based on audit data.
     """
-    if not openai_client:
+    if not GEMINI_API_KEY:
         return None
 
     try:
@@ -363,16 +374,11 @@ def generate_audit_confirmation(data: dict):
 
         user_prompt = f"User: {name}, Business: {business}, Industry: {industry}, Main Pain Point: {problem}. Generate the one-liner."
 
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            max_tokens=60
-        )
+        model = genai.GenerativeModel(GEMINI_MODEL)
+        response = model.generate_content(f"{system_prompt}\n\n{user_prompt}")
 
-        return response.choices[0].message.content.strip()
+        return response.text.strip()
+
     except Exception as e:
         print(f"❌ Auto-Reply Generation Error: {e}")
         return None

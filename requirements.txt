@@ -18,3 +18,5 @@ aiofiles
 playwright
 dnspython
 psycopg2-binary
+google-generativeai
+
