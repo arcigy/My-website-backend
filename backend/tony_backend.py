@@ -340,12 +340,13 @@ def get_tony_response(message, conversation_id, history, user_lang=None, user_da
 
     except Exception as e:
         import traceback
-        print(f"Error in Tony AI: {e}")
+        error_msg = str(e)
+        print(f"Error in Tony AI: {error_msg}")
         traceback.print_exc()
         return {
-            "intention": "question",
-            "response": "Prepáč, niečo sa pokazilo. Skús prosím znova.",
-            "error": str(e)
+            "intention": "error",
+            "response": f"Tony Error: {error_msg}", 
+            "error": error_msg
         }, ""
 
 def generate_audit_confirmation(data: dict):
