@@ -298,13 +298,16 @@ def get_tony_response(message, conversation_id, history, user_lang=None, user_da
             formatted_history = "\n".join([f"{m.get('type', 'unknown').capitalize()}: {m.get('text', '')}" for m in history])
         
         # 2. Get AI Response
-        current_key = get_key()
+        # 2. Get AI Response
+        current_key = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")
+        if current_key:
+            current_key = current_key.strip('"').strip("'") # Auto-remove quotes if user included them
+            
         if not current_key:
-            all_keys = list(os.environ.keys())
-            raise Exception(f"Gemini API key not initialized. I see these keys: {all_keys}")
+            all_keys = [k for k in os.environ.keys() if "GEMINI" in k]
+            raise Exception(f"Gemini API key not initialized. I see these keys: {all_keys}. Make sure GEMINI_API_KEY is set in Railway Variables.")
             
         system_prompt = load_system_prompt()
-
         if "{now}" in system_prompt:
             system_prompt = system_prompt.replace("{now}", str(datetime.datetime.now()))
         
