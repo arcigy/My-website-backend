@@ -19,10 +19,11 @@ env_paths = [
 
 for p in env_paths:
     if os.path.exists(p):
-        load_dotenv(p, override=True)
+        load_dotenv(p, override=False) # Respect system env vars
         break
 else:
-    load_dotenv(override=True)
+    load_dotenv(override=False)
+
 
 # Helper to mask secret keys in logs
 def mask_key(k):
@@ -81,6 +82,16 @@ class DatabaseManager:
 
 db = DatabaseManager()
 
+# Start initialization
+print(f"🤖 Tony Initialization (Postgres Edition):")
+
+# Helper to look for key anywhere
+def get_key():
+    return os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")
+
+GEMINI_API_KEY = get_key()
+print(f"   GEMINI_KEY Found: {mask_key(GEMINI_API_KEY)}")
+
 # Initialize Gemini
 if GEMINI_API_KEY:
     try:
@@ -89,7 +100,7 @@ if GEMINI_API_KEY:
     except Exception as e:
         print(f"   ❌ Gemini Error: {e}")
 else:
-    print("   ❌ Gemini: NOT CONFIGURED")
+    print("   ❌ Gemini: NOT CONFIGURED (Environment variables found: " + ", ".join([k for k in os.environ.keys() if "GEMINI" in k]) + ")")
 
 
 # Load Knowledge Base and System Prompt
@@ -287,11 +298,12 @@ def get_tony_response(message, conversation_id, history, user_lang=None, user_da
             formatted_history = "\n".join([f"{m.get('type', 'unknown').capitalize()}: {m.get('text', '')}" for m in history])
         
         # 2. Get AI Response
-        system_prompt = load_system_prompt()
-        if not GEMINI_API_KEY:
-            raise Exception("Gemini API key not initialized. Check GEMINI_API_KEY variable.")
+        current_key = get_key()
+        if not current_key:
+            raise Exception(f"Gemini API key not initialized. Available env keys: {[k for k in os.environ.keys() if 'GEMINI' in k]}")
             
-        if "{now}" in system_prompt:
+        system_prompt = load_system_prompt()
+
             system_prompt = system_prompt.replace("{now}", str(datetime.datetime.now()))
         
         detected_lang = user_lang if user_lang else ('sk' if any(word in message.lower() for word in ['ahoj', 'chcem', 'termin', 'ano', 'dobry']) else 'en')
