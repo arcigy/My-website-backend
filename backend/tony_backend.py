@@ -83,6 +83,7 @@ class DatabaseManager:
 db = DatabaseManager()
 
 # Start initialization
+print(f"🤖 Tony Module Start - Heatbeat")
 print(f"🤖 Tony Initialization (Postgres Edition):")
 
 # Helper to look for key anywhere
