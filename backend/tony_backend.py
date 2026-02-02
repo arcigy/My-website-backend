@@ -300,7 +300,8 @@ def get_tony_response(message, conversation_id, history, user_lang=None, user_da
         # 2. Get AI Response
         current_key = get_key()
         if not current_key:
-            raise Exception(f"Gemini API key not initialized. Available env keys: {[k for k in os.environ.keys() if 'GEMINI' in k]}")
+            all_keys = list(os.environ.keys())
+            raise Exception(f"Gemini API key not initialized. I see these keys: {all_keys}")
             
         system_prompt = load_system_prompt()
 
