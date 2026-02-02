@@ -304,6 +304,7 @@ def get_tony_response(message, conversation_id, history, user_lang=None, user_da
             
         system_prompt = load_system_prompt()
 
+        if "{now}" in system_prompt:
             system_prompt = system_prompt.replace("{now}", str(datetime.datetime.now()))
         
         detected_lang = user_lang if user_lang else ('sk' if any(word in message.lower() for word in ['ahoj', 'chcem', 'termin', 'ano', 'dobry']) else 'en')
