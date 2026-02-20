@@ -80,7 +80,7 @@ class DatabaseManager:
                 print("[DB] Connected via DATABASE_URL")
                 return conn
             except Exception as e:
-                print(f"[DB] DATABASE_URL connection failed: {e} — trying fallback params")
+                print(f"[DB] DATABASE_URL connection failed: {e} -- trying fallback params")
 
         # Fallback to individual parameters
         try:
