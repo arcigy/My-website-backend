@@ -43,7 +43,7 @@ DB_NAME = os.getenv("DB_NAME", "railway")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASS = os.getenv("DB_PASSWORD", "xqhcUQFWracYZcigUmiiUNBYRbUAaOEO")
 
-print(f"🤖 Tony Initialization (Postgres Edition):")
+print(f"Tony Initialization (Postgres Edition):")
 print(f"   GEMINI_KEY: {mask_key(GEMINI_API_KEY)}")
 print(f"   DB_MODE: {'DATABASE_URL' if DATABASE_URL else 'FALLBACK_PARAMS'}")
 
@@ -61,11 +61,13 @@ class DatabaseManager:
 
     def get_connection(self):
         try:
-            if self.db_url:
-                return psycopg2.connect(self.db_url)
+            # print(f"DEBUG: db_url='{self.db_url}'")
+            if self.db_url and "${{" not in self.db_url and "localhost" not in self.db_url:
+                if self.db_url.startswith("postgres"):
+                    return psycopg2.connect(self.db_url)
             return psycopg2.connect(**self.conn_params)
         except Exception as e:
-            print(f"❌ Database Connection Error: {e}")
+            print(f"[Error] Database Connection Error: {e}")
             return None
 
     def execute_query(self, query, params=None):
@@ -76,15 +78,15 @@ class DatabaseManager:
                 with conn.cursor() as cur:
                     cur.execute(query, params)
         except Exception as e:
-            print(f"❌ Query Error: {e}")
+            print(f"[Error] Query Error: {e}")
         finally:
             conn.close()
 
 db = DatabaseManager()
 
 # Start initialization
-print(f"🤖 Tony Module Start - Heatbeat")
-print(f"🤖 Tony Initialization (Postgres Edition):")
+print(f"Tony Module Start - Heatbeat")
+print(f"Tony Initialization (Postgres Edition):")
 
 # Helper to look for key anywhere
 def get_key():
@@ -97,11 +99,11 @@ print(f"   GEMINI_KEY Found: {mask_key(GEMINI_API_KEY)}")
 if GEMINI_API_KEY:
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        print(f"   ✅ Gemini: Connected (Model: {GEMINI_MODEL})")
+        print(f"   [Success] Gemini: Connected (Model: {GEMINI_MODEL})")
     except Exception as e:
-        print(f"   ❌ Gemini Error: {e}")
+        print(f"   [Error] Gemini Error: {e}")
 else:
-    print("   ❌ Gemini: NOT CONFIGURED (Environment variables found: " + ", ".join([k for k in os.environ.keys() if "GEMINI" in k]) + ")")
+    print("   [Error] Gemini: NOT CONFIGURED (Environment variables found: " + ", ".join([k for k in os.environ.keys() if "GEMINI" in k]) + ")")
 
 
 # Load Knowledge Base and System Prompt
@@ -209,9 +211,9 @@ def persist_audit(data: dict):
                 "problem" = EXCLUDED."problem";
         """
         db.execute_query(query, clean_data)
-        print(f"✅ Audit successfully persisted for: {clean_data.get('email')}")
+        print(f"[Success] Audit successfully persisted for: {clean_data.get('email')}")
     except Exception as e:
-        print(f"❌ Postgres Audit Error: {e}")
+        print(f"[Error] Postgres Audit Error: {e}")
 
 def persist_booking(data: dict):
     """
@@ -229,9 +231,9 @@ def persist_booking(data: dict):
             ON CONFLICT ("email", "bookingTime") DO NOTHING;
         """
         db.execute_query(query, clean_data)
-        print(f"✅ Booking persisted for: {clean_data.get('email')}")
+        print(f"[Success] Booking persisted for: {clean_data.get('email')}")
     except Exception as e:
-        print(f"❌ Postgres Booking Error: {e}")
+        print(f"[Error] Postgres Booking Error: {e}")
 
 def persist_pre_audit(data: dict):
     """
@@ -284,9 +286,9 @@ def persist_pre_audit(data: dict):
             );
         """
         db.execute_query(query, params)
-        print(f"✅ Pre-Audit persisted for: {clean_data.get('email')}")
+        print(f"[Success] Pre-Audit persisted for: {clean_data.get('email')}")
     except Exception as e:
-        print(f"❌ Postgres Pre-Audit Error: {e}")
+        print(f"[Error] Postgres Pre-Audit Error: {e}")
 
 def get_tony_response(message, conversation_id, history, user_lang=None, user_data=None):
     """
@@ -399,7 +401,7 @@ def generate_audit_confirmation(data: dict):
         return response.text.strip()
 
     except Exception as e:
-        print(f"❌ Auto-Reply Generation Error: {e}")
+        print(f"[Error] Auto-Reply Generation Error: {e}")
         return None
 
 if __name__ == "__main__":
