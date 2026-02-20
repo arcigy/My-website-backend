@@ -181,7 +181,7 @@ def persist_conversation(conversation_id, message, output, formatted_history):
         
         query_memory = """
             INSERT INTO "ConversationMemory" ("messageID", "conversation", "created_at")
-            VALUES (%s, %s, NOW())
+            VALUES (%s, %s, NOW() AT TIME ZONE 'Europe/Bratislava')
             ON CONFLICT ("messageID") 
             DO UPDATE SET "conversation" = EXCLUDED."conversation";
         """
@@ -208,7 +208,7 @@ def persist_conversation(conversation_id, message, output, formatted_history):
             
             query_patient = """
                 INSERT INTO "Patients" ("forename", "surname", "email", "phone", "other_relevant_info", "created_at")
-                VALUES (%s, %s, %s, %s, %s, NOW())
+                VALUES (%s, %s, %s, %s, %s, NOW() AT TIME ZONE 'Europe/Bratislava')
                 ON CONFLICT ("phone") 
                 DO UPDATE SET 
                     "email" = EXCLUDED."email",
@@ -232,7 +232,7 @@ def persist_audit(data: dict):
                 "turnover", "journey", "dream", "problem", "bottleneck", "created_at"
             ) VALUES (
                 %(fullname)s, %(email)s, %(phone)s, %(company)s, %(pitch)s,
-                %(turnover)s, %(journey)s, %(dream)s, %(problem)s, %(bottleneck)s, NOW()
+                %(turnover)s, %(journey)s, %(dream)s, %(problem)s, %(bottleneck)s, NOW() AT TIME ZONE 'Europe/Bratislava'
             )
             ON CONFLICT ("email") 
             DO UPDATE SET 
@@ -258,7 +258,7 @@ def persist_booking(data: dict):
             INSERT INTO "CalendarBookings" (
                 "bookingTime", "email", "name", "phone", "lang", "conversationID", "created_at"
             ) VALUES (
-                %(bookingTime)s, %(email)s, %(name)s, %(phone)s, %(lang)s, %(conversationID)s, NOW()
+                %(bookingTime)s, %(email)s, %(name)s, %(phone)s, %(lang)s, %(conversationID)s, NOW() AT TIME ZONE 'Europe/Bratislava'
             )
             ON CONFLICT ("email", "bookingTime") DO NOTHING;
         """
@@ -314,7 +314,7 @@ def persist_pre_audit(data: dict):
                 %(typical_customer)s, %(source)s, %(top_tasks)s, %(magic_wand)s, %(leads_challenge)s,
                 %(sales_team)s, %(closing_issues)s, %(delivery_time)s, %(ops_recurring)s,
                 %(support_headaches)s, %(ai_experience)s, %(which_ai_tools)s, %(success_definition)s,
-                %(specific_focus)s, %(referrer)s, NOW()
+                %(specific_focus)s, %(referrer)s, NOW() AT TIME ZONE 'Europe/Bratislava'
             );
         """
         db.execute_query(query, params)
