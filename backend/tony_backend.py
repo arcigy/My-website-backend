@@ -43,9 +43,20 @@ DB_NAME = os.getenv("DB_NAME", "railway")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASS = os.getenv("DB_PASSWORD", "xqhcUQFWracYZcigUmiiUNBYRbUAaOEO")
 
+# --- Print DB config at startup (masked) ---
 print(f"Tony Initialization (Postgres Edition):")
 print(f"   GEMINI_KEY: {mask_key(GEMINI_API_KEY)}")
-print(f"   DB_MODE: {'DATABASE_URL' if DATABASE_URL else 'FALLBACK_PARAMS'}")
+raw_url = DATABASE_URL or ''
+if raw_url and '${' not in raw_url and raw_url.startswith('postgres'):
+    # Mask password in URL for logging
+    try:
+        import re
+        masked = re.sub(r'://([^:]+):([^@]+)@', r'://\1:****@', raw_url)
+    except:
+        masked = raw_url[:30] + '...'
+    print(f"   DB_MODE: DATABASE_URL ({masked})")
+else:
+    print(f"   DB_MODE: FALLBACK_PARAMS (host={DB_HOST}, port={DB_PORT})")
 
 # --- DATABASE MANAGER ---
 class DatabaseManager:
@@ -60,25 +71,46 @@ class DatabaseManager:
         }
 
     def get_connection(self):
+        """Returns a live psycopg2 connection or None."""
+        db_url = self.db_url
+        # Use DATABASE_URL only if it is a real postgres URL (not a template)
+        if db_url and '${' not in db_url and db_url.startswith('postgres'):
+            try:
+                conn = psycopg2.connect(db_url)
+                print("[DB] Connected via DATABASE_URL")
+                return conn
+            except Exception as e:
+                print(f"[DB] DATABASE_URL connection failed: {e} — trying fallback params")
+
+        # Fallback to individual parameters
         try:
-            # print(f"DEBUG: db_url='{self.db_url}'")
-            if self.db_url and "${{" not in self.db_url and "localhost" not in self.db_url:
-                if self.db_url.startswith("postgres"):
-                    return psycopg2.connect(self.db_url)
-            return psycopg2.connect(**self.conn_params)
+            conn = psycopg2.connect(**self.conn_params)
+            print("[DB] Connected via FALLBACK_PARAMS")
+            return conn
         except Exception as e:
-            print(f"[Error] Database Connection Error: {e}")
+            print(f"[DB] FALLBACK_PARAMS connection also failed: {e}")
             return None
 
     def execute_query(self, query, params=None):
+        """Executes a query with explicit commit and full error logging."""
         conn = self.get_connection()
-        if not conn: return
+        if not conn:
+            print("[DB] execute_query: No connection available, query aborted.")
+            return False
         try:
-            with conn:
-                with conn.cursor() as cur:
-                    cur.execute(query, params)
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                affected = cur.rowcount
+            conn.commit()
+            print(f"[DB] Query executed OK. Rows affected: {affected}")
+            return True
         except Exception as e:
-            print(f"[Error] Query Error: {e}")
+            print(f"[DB] Query Error: {e}")
+            try:
+                conn.rollback()
+            except:
+                pass
+            return False
         finally:
             conn.close()
 
